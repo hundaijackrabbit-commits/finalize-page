@@ -1,17 +1,29 @@
-
-## Phase 3 — Privacy & Data Control
-
-Phase 3 adds a workspace Privacy Center and an enforceable Privacy Firewall. Privacy policy now controls AI eligibility, retention defaults, guest-link lifetime, credential cleanup, and disposal/audit behavior. Run `supabase/phase3-migration.sql` after the Phase 2 migration. See `PHASE3_STATUS.md` for the full scope.
-
 # Finalize.page
 
-> **Current build: Phase 2 — Agency Completion.** See `PHASE2_STATUS.md` for the feature/security boundary and production setup.
+> **Current build: Phase 4 — Finalize Documents**  
+> Finalize is the completion layer for work: **verify → resolve → prove**.
 
-Finalize is the completion layer for work: **verify → resolve → prove**.
+Phase 4 adds evidence-backed document and package completion on top of the existing Finalize Rooms, agency workflow, secure artifact pipeline, and Privacy Firewall.
 
-Phase 2 keeps the Phase 1 trust foundation intact and adds the agency-grade completion layer: branded client Rooms, visual review, requested-file uploads, encrypted access requests, payment gates, version-bound approvals, privacy closeout, and handoff proof.
+## What Finalize does now
 
-## Trust boundary inherited from Phase 1C
+A Finalization can coordinate:
+
+- definition-of-done requirements
+- client/no-account review
+- version-sensitive approvals
+- secure requested-file uploads
+- encrypted access/credential requests
+- payment completion gates
+- privacy closeout
+- immutable Finalization Records
+- PDF/DOCX/PPTX/XLSX/TXT/Markdown/CSV/JSON document analysis
+- missing Schedule/Exhibit/Appendix/Attachment detection
+- specialized Contract / Proposal / Application / Report checks
+- package-level consistency observations
+- optional privacy-gated semantic AI review
+
+## Core trust path
 
 ```text
 browser
@@ -20,191 +32,101 @@ private S3
   ↓
 QUARANTINED
   ↓
-file signature / source SHA-256 / archive safety
+file signature + source SHA-256 + archive safety
   ↓
 malware gate
   ↓
-safe parsing
+local document extraction
   ↓
-privacy scan
-  ↓
-redacted derived processing copy
+privacy scan + redacted derivative
   ↓
 READY
-
-safe_for_ai = true only when the privacy-minimized derivative exists
+  ├─ deterministic document checks
+  └─ optional semantic AI review only if Privacy Firewall allows it
 ```
 
-The original customer object remains immutable. Derived text and AI-safe copies are stored separately under the artifact prefix.
+`READY` and `safe_for_ai` remain separate states. Finalize can securely process a Restricted document for human workflow while still blocking it from external AI.
 
-## What is implemented
+## Phase 4 document model
 
-### Durable processing queue
-- Postgres-backed `processing_jobs`
-- atomic `FOR UPDATE SKIP LOCKED` claiming
-- worker leases so abandoned jobs can be reclaimed
-- idempotent `(artifact_id, job_type)` job identity
-- exponential retry scheduling
-- dead-letter state after repeated failures
-- per-artifact processing-event history
-- authenticated internal worker endpoint
-- standalone worker loop (`npm run worker:processing`)
+Each supported artifact can have:
 
-### Quarantine / file validation
-- upload remains `QUARANTINED` after transfer
-- extension + magic-byte/content-signature validation
-- full-source SHA-256 computed server-side from stored bytes
-- declared/stored size integrity from Phase 1B remains in place
-- mismatched file signatures are rejected before parsing
+- `document_profile` — inferred/overridden type, Finalization Spec, structure, entities, score
+- `document_findings` — evidence-backed BLOCKER/WARNING/INFO findings, status, source and artifact version
+- `document_references` — Schedule/Exhibit/Appendix/Annex/Attachment references and package-presence status
 
-### ZIP / Office-container safety
-ZIP, DOCX, XLSX and PPTX containers are inspected through the central directory before any extraction. Checks include:
-- directory bounds
-- entry-count ceiling
-- total declared expansion ceiling
-- expansion-ratio ceiling
-- absolute / drive / `..` traversal paths
+OPEN document blockers for the current artifact version are part of the same hard completion gate as unresolved client actions, payments, privacy items and review feedback.
 
-The inspector is intentionally conservative. ZIP64/very unusual archives can be rejected or routed to a future hardened archive service rather than being optimistically extracted.
+AI findings are warnings by default. A human must explicitly promote an AI finding to a blocker.
 
-### Malware gate
-`FINALIZE_MALWARE_MODE=guardduty` is the production default.
-
-The malware job enters `WAITING_EXTERNAL`. An authenticated security adapter posts the final result to:
-
-`POST /api/internal/artifact-security-event`
-
-with `x-finalize-worker-secret` and:
-
-```json
-{
-  "artifactId": "...",
-  "result": "CLEAN",
-  "provider": "guardduty",
-  "eventId": "..."
-}
-```
-
-Supported results: `CLEAN`, `INFECTED`, `FAILED`.
-
-`FINALIZE_MALWARE_MODE=trusted_dev` exists for local development only and is explicitly refused when `NODE_ENV=production`.
-
-### Safe parsing + privacy firewall
-- TXT/Markdown: local UTF-8 parsing
-- PDF: conservative best-effort text derivative in this phase
-- Office containers/images/oversized documents: marked `LIMITED` until a hardened parser/vision adapter is configured
-- privacy detector inventories common email, phone, SIN-like, payment-card-like and IP-address patterns
-- payment-card candidates require Luhn validation
-- privacy findings are stored separately from source files
-- redacted AI-safe text replaces detected values with category tokens
-- `safe_for_ai` remains **false** if Finalize could not produce and privacy-scan a text derivative
-
-This means `READY` means the artifact passed the storage/security workflow. It does **not** automatically mean raw customer content can be sent to an AI model.
-
-### Retention hook
-Artifacts can carry `retention_delete_after`.
-
-`POST /api/internal/retention/run` removes every object under that artifact prefix, marks content `DELETED`, clears AI eligibility and writes an audit event. Finalization metadata/fingerprints can remain according to policy without keeping the private source bytes.
-
-### Customer-visible processing UX
-The Files panel now exposes:
-- overall artifact state
-- signature status
-- archive status
-- malware status
-- parser status
-- privacy status
-- AI-copy/redaction status
-- source SHA-256
-- detected privacy categories/counts
-- whether a privacy-minimized AI copy is actually ready
-- retry-from-quarantine for failed non-malware processing
+See `PHASE4_STATUS.md` for the full feature/trust boundary and `PHASE4_VALIDATION.md` for validation results.
 
 ## Database setup
 
-Fresh Supabase project:
+For a fresh Supabase project, run in order:
 
 1. `supabase/phase1-schema.sql`
 2. `supabase/phase1b-migration.sql`
 3. `supabase/phase1c-migration.sql`
 4. `supabase/phase2-migration.sql`
-
-Phase 1C writes are service-role/server-only. Workspace members receive read policies for job/progress/privacy metadata; they do not get arbitrary client-side queue mutation privileges.
+5. `supabase/phase3-migration.sql`
+6. `supabase/phase4-migration.sql`
 
 ## Environment
 
-Copy `.env.example` to `.env.local` and configure Supabase + S3 from Phase 1B, then add:
+Copy `.env.example` to `.env.local` and configure the Supabase, private S3, worker and vault settings needed by earlier phases.
+
+Phase 4 optional semantic-review settings:
 
 ```bash
-FINALIZE_WORKER_SECRET=<long-random-secret>
-FINALIZE_MALWARE_MODE=guardduty
-FINALIZE_BASE_URL=http://localhost:3000
+FINALIZE_DOCUMENT_TEXT_MAX_BYTES=26214400
+FINALIZE_DOCUMENT_AI_ENDPOINT=
+FINALIZE_DOCUMENT_AI_API_KEY=
+FINALIZE_DOCUMENT_AI_MODEL=
+FINALIZE_DOCUMENT_AI_MAX_CHARS=70000
+FINALIZE_DOCUMENT_AI_TIMEOUT_MS=45000
 ```
 
-Optional processing ceilings are documented in `.env.example`.
+Leave the AI settings empty to run deterministic document checks only.
 
-## Local processing
-
-Terminal 1:
+## Local development
 
 ```bash
 npm install
 npm run dev
 ```
 
-Terminal 2:
+Run trust/document processing in another terminal:
 
 ```bash
 npm run worker:processing
 ```
 
-For local-only end-to-end pipeline testing:
+For local-only pipeline testing, `FINALIZE_MALWARE_MODE=trusted_dev` is available and is explicitly refused in production. Production should use an external malware result adapter.
 
-```bash
-FINALIZE_MALWARE_MODE=trusted_dev
-```
+## Security / privacy principles
 
-Never use that mode in production.
-
-## Production worker model
-
-Run the Next.js app normally, then run one or more worker processes against the authenticated worker endpoint. The database claim function prevents two workers from claiming the same active job. In a larger deployment this HTTP worker can later be replaced by SQS/Cloudflare Queues/etc. without changing the artifact state model.
-
-Malware scanning should be fed by a real provider (for example, an S3 malware-scanning integration) into the security-event adapter. Do not automatically translate “uploaded” into “clean.”
-
-## S3 CORS
-
-The Phase 1B direct-upload CORS rule still applies. The bucket must remain private. Browser upload needs `PUT` and exposed `ETag`; processing workers use server credentials and do not require public object URLs.
-
-## Known trust-processing boundaries
-
-This is deliberately the **trust-processing foundation**, not the later Document Finalizer.
-
-- PDF extraction is best-effort, not legal-grade document parsing.
-- DOCX/XLSX/PPTX are archive-safety checked but content extraction waits for a hardened parser adapter.
-- Images require a privacy-aware vision/OCR adapter before becoming `safe_for_ai`.
-- malware scanning requires the external provider event in production.
-- retention scheduling UI/policies become richer in Phase 3; Phase 1C provides the enforcement hook.
-
-Those limitations fail closed: they reduce AI eligibility instead of silently exposing unprocessed customer data.
+- private object storage; no permanent public artifact URLs
+- original source objects remain immutable
+- quarantined uploads are not available to AI
+- service-role/server-controlled processing mutations
+- tenant-scoped reads/writes
+- guest Room responses do not expose internal artifact/privacy records
+- privacy-minimized AI derivative is separate from source/extracted text
+- AI findings never become machine-enforced blockers without human confirmation
+- destructive workspace privacy controls remain owner/admin scoped
+- retention/disposal and guest/credential cleanup are auditable
 
 ## Roadmap
 
 - Phase 0 — Website Finalizer acquisition scanner
-- **Phase 1 — Finalize Rooms + trust foundation**
-  - Phase 1A — Room UX / completion loop
-  - Phase 1B — auth, persistence, guest grants, secure multipart intake
-  - Phase 1C — quarantine, privacy firewall, durable processing
-- **Phase 2 — Agency Completion (this build)**
-  - branded no-account client rooms
-  - reusable Finalize Specs
-  - visual review + version history
-  - requested-file guest uploads
-  - encrypted credential/access requests
-  - payment completion gates
-  - version-bound approvals
-  - privacy closeout + handoff manifest
-- Phase 3 — richer customer-facing privacy controls and cleanup
-- Phase 4 — Document Finalizer
-- Phase 5 — integrations
+- Phase 1 — Finalize Rooms + trust foundation
+- Phase 2 — Agency Completion
+- Phase 3 — Privacy & Data Control
+- **Phase 4 — Finalize Documents (current)**
+- Phase 5 — integrations / external completion events
 - Phase 6 — Finalize API / completion infrastructure
+
+## Product boundary
+
+Finalize is not trying to replace project managers, document editors, payment processors, e-signature providers, or legal counsel. It is designed to determine **what still prevents work from being finished**, coordinate the resolution, and preserve proof of what was finalized.

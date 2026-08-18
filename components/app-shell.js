@@ -10,7 +10,7 @@ export function AppShell({ workspace, finalizations, activeId, activeSection, ch
       <header className="topbar">
         <Link href="/" className="brand"><span className="brandmark">✓</span> finalize</Link>
         <div className="topbar-actions">
-          <span className="phase-chip">Phase 3 · Privacy & Data Control</span>
+          <span className="phase-chip">Phase 4 · Finalize Documents</span>
           <div className="user-chip"><span className="mini-avatar">{workspace.currentUser.initials}</span><span>{workspace.currentUser.name}</span></div>
         </div>
       </header>

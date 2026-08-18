@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { getFinalization, readinessFromDb, requireAuthContext, tokenHash, writeAudit } from '../../../../../lib/repository/finalizations';
 import { loadPrivacySettings } from '../../../../../lib/privacy/policy';
+import { analyzePackageProfiles } from '../../../../../lib/documents/package';
 
 function randomToken(bytes = 32) { return crypto.randomBytes(bytes).toString('base64url'); }
 function clean(value, max = 220) { return String(value || '').trim().slice(0, max); }
@@ -110,16 +111,20 @@ export async function POST(request, { params }) {
       const {data:activeRecord,error:activeRecordError}=await ctx.db.from('finalization_records').select('id').eq('finalization_id',id).eq('record_status','active').limit(1).maybeSingle(); if(activeRecordError)throw activeRecordError; if(activeRecord)return NextResponse.json({finalization:await getFinalization(ctx,id)});
       const {data:previousRecord}=await ctx.db.from('finalization_records').select('id').eq('finalization_id',id).order('finalized_at',{ascending:false}).limit(1).maybeSingle();
       const passedCount=current.requirements.filter((r)=>['passed','waived'].includes(r.status)).length;
-      const [{data:readyArtifacts,error:artifactError},{data:payments},{data:privacy}] = await Promise.all([
-        ctx.db.from('artifacts').select('id,original_filename,source_sha256').eq('finalization_id',id).eq('status','READY'),
+      const [{data:readyArtifacts,error:artifactError},{data:payments},{data:privacy},{data:documentProfiles},{data:documentFindings},{data:documentReferences}] = await Promise.all([
+        ctx.db.from('artifacts').select('id,original_filename,source_sha256,document_analysis_status,document_type,document_score').eq('finalization_id',id).eq('status','READY'),
         ctx.db.from('payment_gates').select('label,status,amount_cents,currency,paid_at').eq('finalization_id',id),
         ctx.db.from('privacy_closeout_items').select('title,status,item_type').eq('finalization_id',id),
+        ctx.db.from('document_profiles').select('artifact_id,document_type,spec_key,score,metrics,entities_json,analyzed_at').eq('finalization_id',id),
+        ctx.db.from('document_findings').select('artifact_id,artifact_version,rule_key,severity,source,title,status,resolved_at,resolution_note').eq('finalization_id',id),
+        ctx.db.from('document_references').select('artifact_id,reference_type,reference_label,present_in_package').eq('finalization_id',id),
       ]);
       if(artifactError)throw artifactError;
       const artifactProof=(readyArtifacts||[]).filter((a)=>a.source_sha256).sort((a,b)=>a.id.localeCompare(b.id)).map((a)=>`${a.id}:${a.source_sha256}`).join('|');
       const proofInput=artifactProof||`${id}:${current.artifactVersion}:no-ready-artifact`;
       const fingerprint=`SHA256:${crypto.createHash('sha256').update(proofInput).digest('hex')}`; const publicId=`F-${crypto.randomInt(100000,999999)}`;
-      const recordJson={finalizationId:id,title:current.title,artifactVersion:current.artifactVersion,passedRequirementCount:passedCount,finalizedAt:new Date().toISOString(),artifacts:(readyArtifacts||[]).map((a)=>({id:a.id,name:a.original_filename,sha256:a.source_sha256})),payments:payments||[],privacyCloseout:privacy||[],approval:{status:'approved',artifactVersion:current.artifactVersion}};
+      const packageObservations=analyzePackageProfiles(documentProfiles||[]);
+      const recordJson={finalizationId:id,title:current.title,artifactVersion:current.artifactVersion,passedRequirementCount:passedCount,finalizedAt:new Date().toISOString(),artifacts:(readyArtifacts||[]).map((a)=>({id:a.id,name:a.original_filename,sha256:a.source_sha256,documentAnalysisStatus:a.document_analysis_status,documentType:a.document_type,documentScore:a.document_score})),documents:{profiles:documentProfiles||[],findings:documentFindings||[],references:documentReferences||[],packageObservations},payments:payments||[],privacyCloseout:privacy||[],approval:{status:'approved',artifactVersion:current.artifactVersion}};
       const {error:recordError}=await ctx.db.from('finalization_records').insert({public_record_id:publicId,finalization_id:id,artifact_version:current.artifactVersion,artifact_fingerprint:fingerprint,passed_requirement_count:passedCount,record_json:recordJson,finalized_by:ctx.user.id,record_status:'active',supersedes_record_id:previousRecord?.id||null}); if(recordError)throw recordError;
       const now=new Date().toISOString();
       const privacySettings=await loadPrivacySettings(ctx.db,ctx.organization.id);

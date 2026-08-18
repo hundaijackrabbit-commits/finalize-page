@@ -9,7 +9,7 @@ import { seedArtifactPipeline } from '../../../../../lib/processing/queue';
 import { calculateRetentionDate, loadPrivacySettings } from '../../../../../lib/privacy/policy';
 
 const PART_SIZE=8*1024*1024; const MAX_SIZE=5*1024*1024*1024;
-const MIME=new Map([['pdf','application/pdf'],['docx','application/vnd.openxmlformats-officedocument.wordprocessingml.document'],['xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],['pptx','application/vnd.openxmlformats-officedocument.presentationml.presentation'],['txt','text/plain'],['md','text/markdown'],['png','image/png'],['jpg','image/jpeg'],['jpeg','image/jpeg'],['webp','image/webp'],['zip','application/zip']]);
+const MIME=new Map([['pdf','application/pdf'],['docx','application/vnd.openxmlformats-officedocument.wordprocessingml.document'],['xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],['pptx','application/vnd.openxmlformats-officedocument.presentationml.presentation'],['txt','text/plain'],['md','text/markdown'],['csv','text/csv'],['json','application/json'],['png','image/png'],['jpg','image/jpeg'],['jpeg','image/jpeg'],['webp','image/webp'],['zip','application/zip']]);
 function safeName(name){return String(name||'').normalize('NFKC').replace(/[\\/\0]/g,'-').replace(/[^a-zA-Z0-9._ -]/g,'_').replace(/\s+/g,' ').trim().slice(0,180)||'upload.bin';}
 function ext(name){return name.split('.').pop()?.toLowerCase()||'';}
 async function audit(ctx,type,text,data={}){await ctx.admin.from('audit_events').insert({organization_id:ctx.row.organization_id,finalization_id:ctx.row.id,actor_participant_id:ctx.grant.participant_id,event_type:type,event_data:{text,actor:'Guest reviewer',...data}});}

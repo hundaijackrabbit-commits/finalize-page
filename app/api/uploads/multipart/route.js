@@ -19,7 +19,7 @@ const MAX_SIZE = 5 * 1024 * 1024 * 1024;
 const ALLOWED = new Map([
   ['pdf','application/pdf'], ['docx','application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
   ['xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'], ['pptx','application/vnd.openxmlformats-officedocument.presentationml.presentation'],
-  ['txt','text/plain'], ['md','text/markdown'], ['png','image/png'], ['jpg','image/jpeg'], ['jpeg','image/jpeg'], ['webp','image/webp'], ['zip','application/zip'],
+  ['txt','text/plain'], ['md','text/markdown'], ['csv','text/csv'], ['json','application/json'], ['png','image/png'], ['jpg','image/jpeg'], ['jpeg','image/jpeg'], ['webp','image/webp'], ['zip','application/zip'],
 ]);
 
 function safeName(name) {
