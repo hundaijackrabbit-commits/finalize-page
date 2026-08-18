@@ -3,14 +3,14 @@
 import Link from 'next/link';
 import { Icon } from './icons';
 
-export function AppShell({ workspace, finalizations, activeId, children }) {
+export function AppShell({ workspace, finalizations, activeId, activeSection, children }) {
   const active = finalizations.filter((f) => f.state !== 'FINALIZED');
   return (
     <main className="phase-app">
       <header className="topbar">
         <Link href="/" className="brand"><span className="brandmark">✓</span> finalize</Link>
         <div className="topbar-actions">
-          <span className="phase-chip">Phase 2 · Agency Completion</span>
+          <span className="phase-chip">Phase 3 · Privacy & Data Control</span>
           <div className="user-chip"><span className="mini-avatar">{workspace.currentUser.initials}</span><span>{workspace.currentUser.name}</span></div>
         </div>
       </header>
@@ -21,7 +21,8 @@ export function AppShell({ workspace, finalizations, activeId, children }) {
             <div><strong>{workspace.name}</strong><small>{workspace.plan} · {workspace.memberCount} members</small></div>
           </div>
           <nav className="side-nav">
-            <Link className={!activeId ? 'active' : ''} href="/app"><Icon name="home"/>Overview</Link>
+            <Link className={!activeId && activeSection !== 'privacy' ? 'active' : ''} href="/app"><Icon name="home"/>Overview</Link>
+            <Link className={activeSection === 'privacy' ? 'active' : ''} href="/app/privacy"><Icon name="shield"/>Privacy</Link>
             <a href="#active"><Icon name="check"/>Active <span>{active.length}</span></a>
             <a href="#completed"><Icon name="archive"/>Completed</a>
             <a href="#templates"><Icon name="template"/>Templates</a>

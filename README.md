@@ -1,3 +1,8 @@
+
+## Phase 3 — Privacy & Data Control
+
+Phase 3 adds a workspace Privacy Center and an enforceable Privacy Firewall. Privacy policy now controls AI eligibility, retention defaults, guest-link lifetime, credential cleanup, and disposal/audit behavior. Run `supabase/phase3-migration.sql` after the Phase 2 migration. See `PHASE3_STATUS.md` for the full scope.
+
 # Finalize.page
 
 > **Current build: Phase 2 — Agency Completion.** See `PHASE2_STATUS.md` for the feature/security boundary and production setup.

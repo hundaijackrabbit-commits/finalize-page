@@ -6,6 +6,7 @@ import { resolveGuestGrant } from '../../../../../lib/repository/guest';
 import { getS3, uploadBucket } from '../../../../../lib/uploads/s3';
 import { s3Configured } from '../../../../../lib/runtime';
 import { seedArtifactPipeline } from '../../../../../lib/processing/queue';
+import { calculateRetentionDate, loadPrivacySettings } from '../../../../../lib/privacy/policy';
 
 const PART_SIZE=8*1024*1024; const MAX_SIZE=5*1024*1024*1024;
 const MIME=new Map([['pdf','application/pdf'],['docx','application/vnd.openxmlformats-officedocument.wordprocessingml.document'],['xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],['pptx','application/vnd.openxmlformats-officedocument.presentationml.presentation'],['txt','text/plain'],['md','text/markdown'],['png','image/png'],['jpg','image/jpeg'],['jpeg','image/jpeg'],['webp','image/webp'],['zip','application/zip']]);
@@ -27,7 +28,7 @@ export async function POST(request,{params}){
       const artifactId=crypto.randomUUID(); const Key=`${ctx.row.organization_id}/${ctx.row.id}/${artifactId}/${crypto.randomUUID()}-${filename}`;
       const created=await s3.send(new CreateMultipartUploadCommand({Bucket,Key,ContentType:expected,ServerSideEncryption:'AES256',ChecksumAlgorithm:'SHA256',Metadata:{'artifact-id':artifactId,'finalization-id':ctx.row.id,'guest-upload':'true'}}));
       const expiresAt=new Date(Date.now()+24*60*60*1000).toISOString();
-      const {error:aErr}=await ctx.admin.from('artifacts').insert({id:artifactId,organization_id:ctx.row.organization_id,finalization_id:ctx.row.id,original_filename:filename,storage_key:Key,size_bytes:size,mime_type:expected,status:'UPLOADING',privacy_classification:'CONFIDENTIAL',created_by:null,created_by_participant_id:ctx.grant.participant_id});
+      const privacySettings=await loadPrivacySettings(ctx.admin,ctx.row.organization_id);const retentionDeleteAfter=calculateRetentionDate(privacySettings.sourceRetentionDays);const {error:aErr}=await ctx.admin.from('artifacts').insert({id:artifactId,organization_id:ctx.row.organization_id,finalization_id:ctx.row.id,original_filename:filename,storage_key:Key,size_bytes:size,mime_type:expected,status:'UPLOADING',privacy_classification:'CONFIDENTIAL',retention_delete_after:retentionDeleteAfter,created_by:null,created_by_participant_id:ctx.grant.participant_id});
       if(aErr){await s3.send(new AbortMultipartUploadCommand({Bucket,Key,UploadId:created.UploadId})).catch(()=>{});throw aErr;}
       const {error:sErr}=await ctx.admin.from('upload_sessions').insert({organization_id:ctx.row.organization_id,finalization_id:ctx.row.id,artifact_id:artifactId,provider_upload_id:created.UploadId,part_size_bytes:PART_SIZE,status:'UPLOADING',expires_at:expiresAt,created_by:null,created_by_participant_id:ctx.grant.participant_id,file_request_id:fileRequest.id});if(sErr)throw sErr;
       await audit(ctx,'guest_upload.started',`Guest upload started: ${filename}`,{artifactId,fileRequestId:fileRequest.id}); return NextResponse.json({artifactId,partSize:PART_SIZE,expiresAt});

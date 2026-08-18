@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { getFinalization, readinessFromDb, requireAuthContext, tokenHash, writeAudit } from '../../../../../lib/repository/finalizations';
+import { loadPrivacySettings } from '../../../../../lib/privacy/policy';
 
 function randomToken(bytes = 32) { return crypto.randomBytes(bytes).toString('base64url'); }
 function clean(value, max = 220) { return String(value || '').trim().slice(0, max); }
@@ -121,16 +122,18 @@ export async function POST(request, { params }) {
       const recordJson={finalizationId:id,title:current.title,artifactVersion:current.artifactVersion,passedRequirementCount:passedCount,finalizedAt:new Date().toISOString(),artifacts:(readyArtifacts||[]).map((a)=>({id:a.id,name:a.original_filename,sha256:a.source_sha256})),payments:payments||[],privacyCloseout:privacy||[],approval:{status:'approved',artifactVersion:current.artifactVersion}};
       const {error:recordError}=await ctx.db.from('finalization_records').insert({public_record_id:publicId,finalization_id:id,artifact_version:current.artifactVersion,artifact_fingerprint:fingerprint,passed_requirement_count:passedCount,record_json:recordJson,finalized_by:ctx.user.id,record_status:'active',supersedes_record_id:previousRecord?.id||null}); if(recordError)throw recordError;
       const now=new Date().toISOString();
-      await Promise.all([
-        ctx.db.from('guest_access_grants').update({revoked_at:now}).eq('finalization_id',id).is('revoked_at',null),
-        ctx.db.from('secure_requests').update({status:'destroyed',encrypted_payload:null,payload_iv:null,payload_tag:null,destroyed_at:now}).eq('finalization_id',id).in('status',['submitted','viewed']),
-        ctx.db.from('privacy_closeout_items').update({status:'resolved',resolved_at:now}).eq('finalization_id',id).in('status',['scheduled']),
-        ctx.db.from('finalizations').update({state:'FINALIZED',finalized_at:now,updated_at:now,handoff_status:'COMPLETE',privacy_closeout_status:'COMPLETE'}).eq('id',id),
-      ]);
-      await writeAudit(ctx,id,'finalization.completed','Finalization completed, access closed, and record sealed');
+      const privacySettings=await loadPrivacySettings(ctx.db,ctx.organization.id);
+      const cleanup=[];
+      if(privacySettings.autoRevokeGuestsOnFinalize) cleanup.push(ctx.db.from('guest_access_grants').update({revoked_at:now}).eq('finalization_id',id).is('revoked_at',null));
+      if(privacySettings.autoDestroyCredentialsOnFinalize) cleanup.push(ctx.db.from('secure_requests').update({status:'destroyed',encrypted_payload:null,payload_iv:null,payload_tag:null,destroyed_at:now}).eq('finalization_id',id).in('status',['submitted','viewed']));
+      cleanup.push(ctx.db.from('privacy_closeout_items').update({status:'resolved',resolved_at:now}).eq('finalization_id',id).in('status',['scheduled']));
+      cleanup.push(ctx.db.from('finalizations').update({state:'FINALIZED',finalized_at:now,updated_at:now,handoff_status:'COMPLETE',privacy_closeout_status:'COMPLETE'}).eq('id',id));
+      await Promise.all(cleanup);
+      await ctx.db.from('privacy_events').insert({organization_id:ctx.organization.id,finalization_id:id,actor_user_id:ctx.user.id,event_type:'finalization.privacy_finalized',event_data:{autoRevokeGuests:privacySettings.autoRevokeGuestsOnFinalize,autoDestroyCredentials:privacySettings.autoDestroyCredentialsOnFinalize,policyVersion:'phase3.v1'}});
+      await writeAudit(ctx,id,'finalization.completed','Finalization completed, privacy policy applied, and record sealed');
     } else if (action === 'create_guest_link') {
       const participantId=body.participantId||current.approval.reviewerId; if(!participantId)return NextResponse.json({error:'reviewer_required'},{status:400});
-      const token=randomToken(); const expiresAt=new Date(Date.now()+7*24*60*60*1000).toISOString();
+      const privacySettings=await loadPrivacySettings(ctx.db,ctx.organization.id); const token=randomToken(); const expiresAt=new Date(Date.now()+privacySettings.guestLinkTtlDays*24*60*60*1000).toISOString();
       await ctx.db.from('guest_access_grants').update({revoked_at:new Date().toISOString()}).eq('finalization_id',id).eq('participant_id',participantId).is('revoked_at',null);
       const {error}=await ctx.db.from('guest_access_grants').insert({finalization_id:id,participant_id:participantId,token_hash:tokenHash(token),expires_at:expiresAt,require_email_verification:false}); if(error)throw error;
       await writeAudit(ctx,id,'guest.link_created','Secure guest review link created'); return NextResponse.json({finalization:await getFinalization(ctx,id),guest:{token,expiresAt}});

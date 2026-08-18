@@ -7,6 +7,7 @@ import { Icon } from '../../../../components/icons';
 import { ArtifactUpload } from '../../../../components/artifact-upload';
 import { readiness, useFinalizeStore } from '../../../../lib/finalize-store';
 import { ClientDeskPanel, CloseoutPanel, ReviewPanel, RootBlockerGraph } from '../../../../components/phase2-room';
+import { PrivacyRoomPanel } from '../../../../components/privacy-center';
 
 function RequirementRow({ item, finalization, store, onComment }) {
   const owner = finalization.participants.find((p) => p.id === item.ownerId);
@@ -104,7 +105,7 @@ export default function FinalizationRoom() {
       <div className="gate-summary"><div><span>Required passed</span><strong>{info.passedRequired}/{info.required.length}</strong></div><div><span>Warnings</span><strong>{info.warnings.length}</strong></div><div><span>Approval</span><strong>{finalization.approval.status.replace('_',' ')}</strong></div></div>
     </div>
 
-    <div className="room-tabs">{['Requirements','Review','Client Desk','Files','Approvals','Closeout','Discussion','Activity'].map((t) => <button key={t} onClick={() => setTab(t)} className={tab === t ? 'active' : ''}>{t}{t === 'Discussion' && finalization.comments.length > 0 && <span>{finalization.comments.length}</span>}</button>)}</div>
+    <div className="room-tabs">{['Requirements','Review','Client Desk','Files','Privacy','Approvals','Closeout','Discussion','Activity'].map((t) => <button key={t} onClick={() => setTab(t)} className={tab === t ? 'active' : ''}>{t}{t === 'Discussion' && finalization.comments.length > 0 && <span>{finalization.comments.length}</span>}</button>)}</div>
 
     {tab === 'Requirements' && <>
       <div className="section-bar"><div><h3>Definition of done</h3><p>Required blockers control the gate. Recommendations improve readiness without preventing completion.</p></div><div className="legend"><span><i className="dot-required"/>Required</span><span><i className="dot-recommended"/>Recommended</span></div></div>
@@ -121,6 +122,8 @@ export default function FinalizationRoom() {
     {tab === 'Client Desk' && <ClientDeskPanel finalization={finalization} store={store} copyShare={copyShare}/>}
 
     {tab === 'Files' && <ArtifactUpload finalization={finalization} store={store}/>}
+
+    {tab === 'Privacy' && <PrivacyRoomPanel finalization={finalization} store={store}/>}
 
     {tab === 'Closeout' && <CloseoutPanel finalization={finalization} store={store}/>}
 

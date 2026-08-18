@@ -12,6 +12,7 @@ import { getS3, uploadBucket } from '../../../../lib/uploads/s3';
 import { getFinalization, requireAuthContext, writeAudit } from '../../../../lib/repository/finalizations';
 import { s3Configured } from '../../../../lib/runtime';
 import { seedArtifactPipeline } from '../../../../lib/processing/queue';
+import { calculateRetentionDate, loadPrivacySettings } from '../../../../lib/privacy/policy';
 
 const PART_SIZE = 8 * 1024 * 1024;
 const MAX_SIZE = 5 * 1024 * 1024 * 1024;
@@ -53,11 +54,13 @@ export async function POST(request) {
       const suppliedMime = String(body.contentType || '').toLowerCase();
       if (suppliedMime && suppliedMime !== expectedMime && !(ext === 'md' && suppliedMime === 'text/plain') && !(ext === 'zip' && ['application/x-zip-compressed','application/octet-stream'].includes(suppliedMime))) return NextResponse.json({ error: 'mime_type_mismatch' }, { status: 415 });
 
+      const privacySettings = await loadPrivacySettings(ctx.db, ctx.organization.id);
       const artifactId = crypto.randomUUID();
+      const retentionDeleteAfter = calculateRetentionDate(privacySettings.sourceRetentionDays);
       const Key = `${ctx.organization.id}/${finalization.id}/${artifactId}/${crypto.randomUUID()}-${filename}`;
       const created = await s3.send(new CreateMultipartUploadCommand({ Bucket, Key, ContentType: expectedMime, ServerSideEncryption: 'AES256', ChecksumAlgorithm: 'SHA256', Metadata: { 'artifact-id': artifactId, 'finalization-id': finalization.id } }));
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-      const { error: artifactError } = await ctx.db.from('artifacts').insert({ id: artifactId, organization_id: ctx.organization.id, finalization_id: finalization.id, original_filename: filename, storage_key: Key, size_bytes: size, mime_type: expectedMime, status: 'UPLOADING', privacy_classification: ['PUBLIC','BUSINESS','CONFIDENTIAL','RESTRICTED'].includes(body.privacy) ? body.privacy : 'BUSINESS', created_by: ctx.user.id });
+      const { error: artifactError } = await ctx.db.from('artifacts').insert({ id: artifactId, organization_id: ctx.organization.id, finalization_id: finalization.id, original_filename: filename, storage_key: Key, size_bytes: size, mime_type: expectedMime, status: 'UPLOADING', privacy_classification: ['PUBLIC','BUSINESS','CONFIDENTIAL','RESTRICTED'].includes(body.privacy) ? body.privacy : 'BUSINESS', retention_delete_after: retentionDeleteAfter, created_by: ctx.user.id });
       if (artifactError) { await s3.send(new AbortMultipartUploadCommand({ Bucket, Key, UploadId: created.UploadId })).catch(() => {}); throw artifactError; }
       const { error: sessionError } = await ctx.db.from('upload_sessions').insert({ organization_id: ctx.organization.id, finalization_id: finalization.id, artifact_id: artifactId, provider_upload_id: created.UploadId, part_size_bytes: PART_SIZE, status: 'UPLOADING', expires_at: expiresAt, created_by: ctx.user.id });
       if (sessionError) throw sessionError;

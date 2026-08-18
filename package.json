@@ -1,6 +1,6 @@
 {
   "name": "finalize-page",
-  "version": "0.5.0-phase2",
+  "version": "0.6.0-phase3",
   "private": true,
   "scripts": {
     "dev": "next dev",

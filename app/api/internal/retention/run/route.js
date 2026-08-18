@@ -23,9 +23,17 @@ export async function POST(request) {
     try {
       const storage = await deleteArtifactObjects(artifact);
       await db.from('artifacts').update({ status: 'DELETED', storage_key: `deleted://${artifact.id}`, extracted_text_key: null, safe_for_ai: false, processing_error: null, updated_at: new Date().toISOString() }).eq('id', artifact.id);
-      await db.from('audit_events').insert({ organization_id: artifact.organization_id, finalization_id: artifact.finalization_id, event_type: 'artifact.retention_deleted', event_data: { text: `Retention policy deleted source/derived content for ${artifact.original_filename}`, actor: 'Finalize retention', artifactId: artifact.id, deletedObjects: storage.deleted } });
+      const completedAt = new Date().toISOString();
+      await Promise.all([
+        db.from('audit_events').insert({ organization_id: artifact.organization_id, finalization_id: artifact.finalization_id, event_type: 'artifact.retention_deleted', event_data: { text: `Retention policy deleted source/derived content for ${artifact.original_filename}`, actor: 'Finalize retention', artifactId: artifact.id, deletedObjects: storage.deleted } }),
+        db.from('privacy_disposal_requests').update({ status: 'completed', completed_at: completedAt }).eq('artifact_id', artifact.id).eq('status', 'scheduled'),
+        db.from('privacy_events').insert({ organization_id: artifact.organization_id, finalization_id: artifact.finalization_id, artifact_id: artifact.id, event_type: 'artifact.disposal_completed', event_data: { filename: artifact.original_filename, deletedObjects: storage.deleted } }),
+      ]);
       results.push({ artifactId: artifact.id, status: 'deleted', objects: storage.deleted });
-    } catch (err) { results.push({ artifactId: artifact.id, status: 'failed', error: err.message }); }
+    } catch (err) {
+      await db.from('privacy_disposal_requests').update({ status: 'failed', failure_detail: err.message }).eq('artifact_id', artifact.id).eq('status', 'scheduled');
+      results.push({ artifactId: artifact.id, status: 'failed', error: err.message });
+    }
   }
   return NextResponse.json({ processed: results.length, results });
 }
