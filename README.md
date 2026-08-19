@@ -130,3 +130,10 @@ For local-only pipeline testing, `FINALIZE_MALWARE_MODE=trusted_dev` is availabl
 ## Product boundary
 
 Finalize is not trying to replace project managers, document editors, payment processors, e-signature providers, or legal counsel. It is designed to determine **what still prevents work from being finished**, coordinate the resolution, and preserve proof of what was finalized.
+
+
+## Phase 5 — Integrations & External Evidence
+
+Finalize can now bind external provider facts to completion requirements. GitHub and Vercel support server-side pull verification; Stripe, GitHub and generic/provider-forwarded events can enter through signed webhook adapters. Raw provider payloads are hashed and discarded after normalization. If a later provider fact contradicts a previously finalized condition, the Finalization reopens and the prior record remains preserved as superseded history.
+
+Run `supabase/phase5-migration.sql` after the Phase 4 migration and configure the Phase 5 environment variables from `.env.example`.

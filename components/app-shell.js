@@ -10,7 +10,7 @@ export function AppShell({ workspace, finalizations, activeId, activeSection, ch
       <header className="topbar">
         <Link href="/" className="brand"><span className="brandmark">✓</span> finalize</Link>
         <div className="topbar-actions">
-          <span className="phase-chip">Phase 4 · Finalize Documents</span>
+          <span className="phase-chip">Phase 5 · Integrations</span>
           <div className="user-chip"><span className="mini-avatar">{workspace.currentUser.initials}</span><span>{workspace.currentUser.name}</span></div>
         </div>
       </header>
@@ -23,6 +23,7 @@ export function AppShell({ workspace, finalizations, activeId, activeSection, ch
           <nav className="side-nav">
             <Link className={!activeId && activeSection !== 'privacy' ? 'active' : ''} href="/app"><Icon name="home"/>Overview</Link>
             <Link className={activeSection === 'privacy' ? 'active' : ''} href="/app/privacy"><Icon name="shield"/>Privacy</Link>
+            <Link className={activeSection === 'integrations' ? 'active' : ''} href="/app/integrations"><Icon name="external"/>Integrations</Link>
             <a href="#active"><Icon name="check"/>Active <span>{active.length}</span></a>
             <a href="#completed"><Icon name="archive"/>Completed</a>
             <a href="#templates"><Icon name="template"/>Templates</a>
